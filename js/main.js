@@ -4,12 +4,12 @@ var cube = {
     this.buildRubiksCube();
     this.buildRubiksCubeView();
   },
-  RED: { r: 255, g: 0, b: 0 },
-  ORANGE: { r: 255, g: 125, b: 0 },
-  WHITE: { r: 255, g: 255, b: 255 },
-  YELLOW: { r: 255, g: 235, b: 0 },
-  BLUE: { r: 0, g: 0, b: 255 },
-  GREEN: { r: 68, g: 165, b: 0 },
+  // RED: { name: 'red', r: 255, g: 0, b: 0 },
+  // ORANGE: { name: 'orange', r: 255, g: 125, b: 0 },
+  // WHITE: { name: 'white', r: 255, g: 255, b: 255 },
+  // YELLOW: { name: 'yellow', r: 255, g: 235, b: 0 },
+  // BLUE: { name: 'blue', r: 0, g: 0, b: 255 },
+  // GREEN: { name: 'green', r: 68, g: 165, b: 0 },
   CENTER: 'center',
   EDGE: 'edge',
   CORNER: 'corner',
@@ -19,14 +19,22 @@ var cube = {
   S: 'south',
   F: 'front',
   B: 'back',
-  palette: [],
+  palette: [
+    { name: 'red', opposite: 'orange', r: 255, g: 0, b: 0 },
+    { name: 'orange', opposite: 'red', r: 255, g: 125, b: 0 },
+    { name: 'white', opposite: 'yellow', r: 255, g: 255, b: 255 },
+    { name: 'yellow', opposite: 'white', r: 255, g: 235, b: 0 },
+    { name: 'blue', opposite: 'green', r: 0, g: 0, b: 255 },
+    { name: 'green', opposite: 'blue', r: 68, g: 165, b: 0 }
+  ],
   createPalette: function () {
     var me = this,
       table = $('<table/>'),
       row = $('<tr/>'),
       cell;
-    this.palette = [this.RED, this.WHITE, this.BLUE, this.ORANGE, this.YELLOW, this.GREEN];
+
     $.each(this.palette, function (i, color) {
+      color = new me.Color(color);
       cell = $('<td/>').appendTo(row);
       me.paint(cell, color);
     });
@@ -44,30 +52,6 @@ var cube = {
     element
       .css('background-color', 'rgb(' + color.r + ', ' + color.g + ', ' + color.b + ')')
       .data('color', color);
-  },
-  lookupColor: function (color) {
-    var colorName,
-      i,
-      colors = {};
-    colors.RED = this.RED;
-    colors.WHITE = this.WHITE;
-    colors.BLUE = this.BLUE;
-    colors.ORANGE = this.ORANGE;
-    colors.YELLOW = this.YELLOW;
-    colors.GREEN = this.GREEN;
-
-    for (i in colors) {
-      if (colors.hasOwnProperty(i)) {
-        if (colors[i].r === color.r
-            && colors[i].g === color.g
-            && colors[i].b === color.b) {
-          colorName = i;
-          break;
-        }
-      }
-    }
-
-    return colorName;
   },
   selectPaletteColor: function (td) {
     $('#palette td').removeClass('active');
@@ -171,12 +155,36 @@ var cube = {
     });
   },
   paintCube: function (td) {
-    var color = $('#palette').data('color');
-    $(td)
-      .removeClass('unpainted')
-      .data('cube')
-      .setColor(color, $(td).data('face'));
-    this.paint(td, color);
+    var color = $('#palette').data('color'),
+      cube,
+      face;
+
+    td = $(td);
+    cube = td.data('cube');
+    face = td.data('face');
+
+    // Is this a valid color for this cube?
+    console.log('painting cube ' + cube);
+
+    if (isValid()) {
+      td.removeClass('unpainted');
+      cube.setColor(color, face);
+      this.paint(td, color);
+    }
+
+    function isValid() {
+      var valid = true,
+        matchedCube;
+
+      // Does this cube have another face with
+      // the same color or opposite?
+      matchedCube = cube.getFaceByColor(color) || cube.getFaceByColor(color.opposite);
+      if (matchedCube && matchedCube !== face) {
+        valid = false;
+      }
+
+      return valid;
+    }
   },
   Pos: function (x, y, z) {
     this.x = x;
@@ -184,12 +192,34 @@ var cube = {
     this.z = z;
   },
   Cube: function (type, position) {
+    var me = this;
+
     if (!this.validateType(type)) {
       console.error('invalid type', type);
     }
+
+    // Depending on the type, this will have 1-3 faces.
+    // Use the position to determine what faces it has.
+    this.faces = {};
+    createFaces('x', cube.W, cube.E);
+    createFaces('y', cube.S, cube.N);
+    createFaces('z', cube.B, cube.F);
+
     this.type = type;
     this.position = position;
-    this.faces = {};
+
+    function createFaces(axis, low, high) {
+      var face;
+      if (position[axis] === 1) {
+        face = low;
+      } else if (position[axis] === 3) {
+        face = high;
+      }
+
+      if (face) {
+        me.faces[face] = undefined;
+      }
+    }
   },
   Rube: function () {
     this.build();
@@ -214,7 +244,21 @@ var cube = {
       }
     });
     return viewCube;
+  },
+  /**
+  * @param {Object}
+  */
+  Color: function (config) {
+    this.r = config.r;
+    this.g = config.g;
+    this.b = config.b;
+    this.name = config.name;
+    this.opposite = config.opposite;
   }
+};
+
+cube.Color.prototype.toString = function () {
+  return this.name;
 };
 cube.Pos.prototype.toString = function () {
   var xyz = [this.x, this.y, this.z];
@@ -224,6 +268,23 @@ cube.Cube.prototype.setColor = function (color, face) {
   var me = this;
   this.faces[face] = color;
   cube.paint(cube.findInView(this, face), color);
+};
+cube.Cube.prototype.getFaceByColor = function (color) {
+  var i,
+    colorName;
+  if (color instanceof cube.Color) {
+    colorName = color.name;
+  } else {
+    colorName = color;
+  }
+
+  for (i in this.faces) {
+    if (this.faces.hasOwnProperty(i)) {
+      if (this.faces[i] && this.faces[i].name === colorName) {
+        return i;
+      }
+    }
+  }
 };
 cube.Cube.prototype.validateType = function (type) {
   return type === cube.CENTER
@@ -237,7 +298,7 @@ cube.Cube.prototype.toString = function () {
 
   for (i in this.faces) {
     if (this.faces.hasOwnProperty(i)) {
-      s += i + ': ' + cube.lookupColor(this.faces[i]) + '\n';
+      s += i + ': ' + this.faces[i] + '\n';
     }
   }
   return s;
@@ -318,6 +379,7 @@ cube.Rube.prototype.getCube = function (position) {
   });
   return cube;
 };
+cube.Rube.prototype.getCubeByColor = function ()
 $(function () {
   cube.init();
 });
