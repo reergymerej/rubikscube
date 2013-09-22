@@ -13,13 +13,20 @@ var cube = {
   CENTER: 'center',
   EDGE: 'edge',
   CORNER: 'corner',
+  N: 'north',
+  E: 'east',
+  W: 'west',
+  S: 'south',
+  F: 'front',
+  B: 'back',
+  palette: [],
   createPalette: function () {
     var me = this,
-      palette = [this.RED, this.WHITE, this.BLUE, this.ORANGE, this.YELLOW, this.GREEN],
       table = $('<table/>'),
       row = $('<tr/>'),
       cell;
-    $.each(palette, function (i, color) {
+    this.palette = [this.RED, this.WHITE, this.BLUE, this.ORANGE, this.YELLOW, this.GREEN];
+    $.each(this.palette, function (i, color) {
       cell = $('<td/>').appendTo(row);
       me.paint(cell, color);
     });
@@ -37,6 +44,30 @@ var cube = {
     element
       .css('background-color', 'rgb(' + color.r + ', ' + color.g + ', ' + color.b + ')')
       .data('color', color);
+  },
+  lookupColor: function (color) {
+    var colorName,
+      i,
+      colors = {};
+    colors.RED = this.RED;
+    colors.WHITE = this.WHITE;
+    colors.BLUE = this.BLUE;
+    colors.ORANGE = this.ORANGE;
+    colors.YELLOW = this.YELLOW;
+    colors.GREEN = this.GREEN;
+
+    for (i in colors) {
+      if (colors.hasOwnProperty(i)) {
+        if (colors[i].r === color.r
+            && colors[i].g === color.g
+            && colors[i].b === color.b) {
+          colorName = i;
+          break;
+        }
+      }
+    }
+
+    return colorName;
   },
   selectPaletteColor: function (td) {
     $('#palette td').removeClass('active');
@@ -59,8 +90,8 @@ var cube = {
       xMax = 5,
       yMin = 6,
       yMax = 8,
-      i,
-      j,
+      row,
+      column,
       map = {
         x: [3, 2, 1, 1, 1, 1, 1, 2, 3, 3, 3, 3],
         y: [3, 3, 3, 3, 2, 1, 1, 1, 1],
@@ -93,19 +124,38 @@ var cube = {
       return z;
     }
 
-    for (i = 0; i < map.y.length; i++) {
+    function getFace(x, y) {
+      var face;
+      if (x < 3) {
+        face = me.B;
+      } else if (x < 6) {
+        face = me.W;
+      } else if (x > 8) {
+        face = me.E;
+      } else if (y < 3) {
+        face = me.N;
+      } else if (y < 6) {
+        face = me.F;
+      } else {
+        face = me.S;
+      }
+
+      return face;
+    }
+
+    for (row = 0; row < map.y.length; row++) {
       tr = $('<tr/>');
-      for (j = 0; j < map.x.length; j++) {
+      for (column = 0; column < map.x.length; column++) {
         td = $('<td/>');
-        if ((i >= xMin && i <= xMax) || (j >= yMin && j <= yMax)) {
+        if ((row >= xMin && row <= xMax) || (column >= yMin && column <= yMax)) {
           td.addClass('unpainted');
-          position = new me.Pos(map.x[j], map.y[i], getZ(j, i));
+          position = new me.Pos(map.x[column], map.y[row], getZ(column, row));
           td.html(position.toString());
-          td.data('position', position);
-          cube = me.rube.getCube(position);
-          // bind this square to the actual cube
-          td.data('cube', cube);
-          cube.bindView(td);
+          td.data({
+            position: position,
+            cube: me.rube.getCube(position),
+            face: getFace(column, row)
+          });
         } else {
           td.addClass('hidden');
         }
@@ -121,10 +171,12 @@ var cube = {
     });
   },
   paintCube: function (td) {
+    var color = $('#palette').data('color');
     $(td)
       .removeClass('unpainted')
       .data('cube')
-      .setColor($('#palette').data('color'));
+      .setColor(color, $(td).data('face'));
+    this.paint(td, color);
   },
   Pos: function (x, y, z) {
     this.x = x;
@@ -137,7 +189,7 @@ var cube = {
     }
     this.type = type;
     this.position = position;
-    this.views = [];
+    this.faces = {};
   },
   Rube: function () {
     this.build();
@@ -152,18 +204,26 @@ var cube = {
     $.each(cubes, function (i, cube) {
       console.log('\n' + (i + 1) + ' --------------\n' + cube);
     });
+  },
+  findInView: function (cube, face) {
+    var viewCube;
+    $('td', '#cube').not('.hidden').each(function (index, td) {
+      td = $(td);
+      if (td.data('cube') === cube && td.data('face') === face) {
+        viewCube = td;
+      }
+    });
+    return viewCube;
   }
 };
 cube.Pos.prototype.toString = function () {
   var xyz = [this.x, this.y, this.z];
   return '(' + xyz.join(', ') + ')';
 };
-cube.Cube.prototype.setColor = function (color) {
+cube.Cube.prototype.setColor = function (color, face) {
   var me = this;
-  this.color = color;
-  $.each(this.views, function (i, view) {
-    cube.paint(view, me.color);
-  });
+  this.faces[face] = color;
+  cube.paint(cube.findInView(this, face), color);
 };
 cube.Cube.prototype.validateType = function (type) {
   return type === cube.CENTER
@@ -171,14 +231,16 @@ cube.Cube.prototype.validateType = function (type) {
     || type === cube.CORNER;
 };
 cube.Cube.prototype.toString = function () {
-  var s = 'position: ' + this.position + '\n';
+  var s = 'position: ' + this.position + '\n',
+    i;
   s += 'type: ' + this.type + '\n';
-  s += 'color: ' + this.color + '\n';
-  s += 'has view: ' + (this.view !== undefined);
+
+  for (i in this.faces) {
+    if (this.faces.hasOwnProperty(i)) {
+      s += i + ': ' + cube.lookupColor(this.faces[i]) + '\n';
+    }
+  }
   return s;
-};
-cube.Cube.prototype.bindView = function (jQ) {
-  this.views.push(jQ);
 };
 cube.Rube.prototype.build = function () {
   var x, y, z,
