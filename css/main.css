@@ -18,6 +18,13 @@ td {
 	padding: 10px;
 }
 
+#cube td {
+    font-size: .8em;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+}
+
 #cube td.unpainted {
 	background-color: #999;
 }
