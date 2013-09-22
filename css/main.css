@@ -1,0 +1,27 @@
+#main {
+    margin: auto;
+    /*width: 80%;*/
+}
+
+#palette {
+	display: inline-block;
+	padding: 5px;
+	border: 1px solid #666;
+}
+
+#palette td.active {
+	border-width: 3px;
+}
+
+td {
+	border: 1px solid #666;
+	padding: 10px;
+}
+
+#cube td.unpainted {
+	background-color: #999;
+}
+
+#cube td.hidden {
+	border: none;
+}
