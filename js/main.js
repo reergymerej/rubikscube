@@ -155,7 +155,8 @@ var cube = {
     });
   },
   paintCube: function (td) {
-    var color = $('#palette').data('color'),
+    var me = this,
+      color = $('#palette').data('color'),
       cube,
       face;
 
@@ -164,71 +165,68 @@ var cube = {
     face = td.data('face');
 
     // Is this a valid color for this cube?
-    console.log('painting cube ' + cube);
-
     if (isValid()) {
       td.removeClass('unpainted');
       cube.setColor(color, face);
       this.paint(td, color);
+
+      // Can we figure out any other cubes to paint?
+      this.rube.completeColors();
     }
 
     function isValid() {
       var valid = true,
-        matchedCube;
+        matchedCubes,
+        i,
+        cubeColors = [];
 
       // Does this cube have another face with
       // the same color or opposite?
-      matchedCube = cube.getFaceByColor(color) || cube.getFaceByColor(color.opposite);
-      if (matchedCube && matchedCube !== face) {
+      matchedCubes = cube.getFaceByColor(color) || cube.getFaceByColor(color.opposite);
+      if (matchedCubes && matchedCubes !== face) {
         valid = false;
+      }
+
+      // Does this cube (as to be painted) already exist?
+      if (valid) {
+        cubeColors = cube.getColors();
+        cubeColors.push(color);
+        cubeColors.sort();
+
+        // Get all cubes that match the current colors (including proposed).
+        matchedCubes = me.rube.getCubesByColor.apply(me.rube, [cube.type].concat(cubeColors));
+
+        // center
+        if (cube.type === me.CENTER) {
+          valid = matchedCubes.length === 0;
+
+        // edges
+        } else if (cube.type === me.EDGE) {
+          if (cube.paintedFacesCount === 0) {
+            valid = matchedCubes.length < 4;
+          } else {
+            valid = matchedCubes.length === 0;
+          }
+
+        // corners
+        } else {
+          if (cube.paintedFacesCount === 0) {
+            valid = matchedCubes.length < 4;
+          } else if (cube.paintedFacesCount === 1) {
+            valid = matchedCubes.length < 2;
+          } else {
+            valid = matchedCubes.length === 0;
+          }
+        }
+      }
+
+      // Make sure this is a valid corner orientation.
+      if (valid && cube.type === me.CORNER && cube.paintedFacesCount === 2) {
+        valid = me.rube.isValidCorner(cube, color);
       }
 
       return valid;
     }
-  },
-  Pos: function (x, y, z) {
-    this.x = x;
-    this.y = y;
-    this.z = z;
-  },
-  Cube: function (type, position) {
-    var me = this;
-
-    if (!this.validateType(type)) {
-      console.error('invalid type', type);
-    }
-
-    // Depending on the type, this will have 1-3 faces.
-    // Use the position to determine what faces it has.
-    this.faces = {};
-    createFaces('x', cube.W, cube.E);
-    createFaces('y', cube.S, cube.N);
-    createFaces('z', cube.B, cube.F);
-
-    this.type = type;
-    this.position = position;
-
-    function createFaces(axis, low, high) {
-      var face;
-      if (position[axis] === 1) {
-        face = low;
-      } else if (position[axis] === 3) {
-        face = high;
-      }
-
-      if (face) {
-        me.faces[face] = undefined;
-      }
-    }
-  },
-  Rube: function () {
-    this.build();
-    // console.debug('corners');
-    // cube.describeCubes(this.getCorners());
-    // console.debug('edges');
-    // cube.describeCubes(this.getEdges());
-    // console.debug('centers');
-    // cube.describeCubes(this.getCenters());
   },
   describeCubes: function (cubes) {
     $.each(cubes, function (i, cube) {
@@ -254,6 +252,68 @@ var cube = {
     this.b = config.b;
     this.name = config.name;
     this.opposite = config.opposite;
+  },
+  Pos: function (x, y, z) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  },
+  /**
+  * Iterate over own properties in an object.
+  * @param {Object} obj
+  * @param {Function} fn - passed key and value
+  */
+  forObj: function (obj, fn) {
+    var i;
+    for (i in obj) {
+      if (obj.hasOwnProperty(i)) {
+        if (fn(i, obj[i]) === false) {
+          break;
+        }
+      }
+    }
+  },
+  /**
+  * pop and unshift an array until
+  * two elements are found in order
+  */
+  scrollArrayTo: function (arr, el1, el2) {
+    var count = 0,
+      index1 = arr.indexOf(el1),
+      index2 = arr.indexOf(el2);
+
+    if (index1 !== -1 && index2 !== -1) {
+      do {
+        count++;
+        arr.unshift(a.pop());
+        index1 = arr.indexOf(el1);
+        index2 = arr.indexOf(el2);
+      } while (count < arr.length);
+    }
+    return arr;
+  },
+
+  /**
+  * Does an array have these two elements in order, adjacent
+  * to each other?
+  * This loops around the array so el1 at the end and
+  * el2 at the beginning returns true.
+  * @param {Array} arr
+  * @param el1
+  * @param el2
+  * @return {Boolean}
+  */
+  arrayHasPair: function (arr, el1, el2) {
+    var hasPair = false,
+      index1 = arr.indexOf(el1),
+      index2 = arr.indexOf(el2);
+
+    if (index1 !== -1 && index2 !== -1) {
+      hasPair = (index2 === index1 + 1
+        || (index1 === arr.length - 1 && index2 === 0));
+    }
+
+    return hasPair;
   }
 };
 
@@ -264,122 +324,7 @@ cube.Pos.prototype.toString = function () {
   var xyz = [this.x, this.y, this.z];
   return '(' + xyz.join(', ') + ')';
 };
-cube.Cube.prototype.setColor = function (color, face) {
-  var me = this;
-  this.faces[face] = color;
-  cube.paint(cube.findInView(this, face), color);
-};
-cube.Cube.prototype.getFaceByColor = function (color) {
-  var i,
-    colorName;
-  if (color instanceof cube.Color) {
-    colorName = color.name;
-  } else {
-    colorName = color;
-  }
 
-  for (i in this.faces) {
-    if (this.faces.hasOwnProperty(i)) {
-      if (this.faces[i] && this.faces[i].name === colorName) {
-        return i;
-      }
-    }
-  }
-};
-cube.Cube.prototype.validateType = function (type) {
-  return type === cube.CENTER
-    || type === cube.EDGE
-    || type === cube.CORNER;
-};
-cube.Cube.prototype.toString = function () {
-  var s = 'position: ' + this.position + '\n',
-    i;
-  s += 'type: ' + this.type + '\n';
-
-  for (i in this.faces) {
-    if (this.faces.hasOwnProperty(i)) {
-      s += i + ': ' + this.faces[i] + '\n';
-    }
-  }
-  return s;
-};
-cube.Rube.prototype.build = function () {
-  var x, y, z,
-    cubes = [],
-    position;
-  for (x = 1; x <= 3; x++) {
-    for (y = 1; y <= 3; y++) {
-      for (z = 1; z <= 3; z++) {
-        if (!(x === 2 && y === 2 && z === 2)) {
-          position = new cube.Pos(x, y, z);
-          cubes.push(new cube.Cube(getType(position), position));
-        }
-      }
-    }
-  }
-  this.cubes = cubes;
-  function getType(p) {
-    var type;
-    if (isCorner(p)) {
-      type = cube.CORNER;
-    } else if (isCenter(p)) {
-      type = cube.CENTER;
-    } else {
-      type = cube.EDGE;
-    }
-    return type;
-  }
-  function isCenter(p) {
-    var middleAxis1,
-      i;
-    for (i in p) {
-      if (p.hasOwnProperty(i)) {
-        if (p[i] === 2) {
-          if (!middleAxis1) {
-            middleAxis1 = i;
-          } else {
-            return true;
-          }
-        }
-      }
-    }
-    return false;
-  }
-  function isCorner(p) {
-    return p.x !== 2 && p.y !== 2 && p.z !== 2;
-  }
-};
-cube.Rube.prototype.getCubesOfType = function (type) {
-  var cubes = [];
-  $.each(this.cubes, function (index, c) {
-    if (c.type === type) {
-      cubes.push(c);
-    }
-  });
-  return cubes;
-};
-cube.Rube.prototype.getCorners = function () {
-  return this.getCubesOfType(cube.CORNER);
-};
-cube.Rube.prototype.getEdges = function () {
-  return this.getCubesOfType(cube.EDGE);
-};
-cube.Rube.prototype.getCenters = function () {
-  return this.getCubesOfType(cube.CENTER);
-};
-cube.Rube.prototype.getCube = function (position) {
-  var cube;
-  $.each(this.cubes, function (i, c) {
-    if (c.position.x === position.x
-        && c.position.y === position.y
-        && c.position.z === position.z) {
-      cube = c;
-      return false;
-    }
-  });
-  return cube;
-};
-cube.Rube.prototype.getCubeByColor = function ()
 $(function () {
   cube.init();
 });
